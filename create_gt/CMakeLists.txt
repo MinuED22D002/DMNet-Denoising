@@ -76,3 +76,14 @@ else ()
 endif ()
 
 target_link_libraries(igl_gt boost_thread gmp)
+
+# Denoising Tool (No Mesh Dependency)
+add_executable(igl_gt_denoise meshing_denoise.cc)
+target_link_libraries(igl_gt_denoise ${Open3D_LIBRARIES} boost_thread gmp)
+target_include_directories(igl_gt_denoise PUBLIC ${Open3D_INCLUDE_DIRS})
+if(WIN32 AND BUILD_SHARED_LIBS)
+    add_custom_command(TARGET igl_gt_denoise POST_BUILD
+                    COMMAND ${CMAKE_COMMAND} -E copy
+                            ${CMAKE_INSTALL_PREFIX}/bin/Open3D.dll
+                            ${CMAKE_CURRENT_BINARY_DIR}/Release)
+endif()

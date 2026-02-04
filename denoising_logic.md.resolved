@@ -1,0 +1,54 @@
+# DMNet Denoising Preprocessing Logic
+
+## Overview
+The preprocessing pipeline converts raw point clouds (Noisy Input + Clean Ground Truth) into the **graph structure** required by DMNet (a Graph Convolutional Network) and ensures both inputs are **spatially aligned**.
+
+**Data Flow:**
+`Raw Data` -> [denoise_data_process.py](file:///Users/minureghunath/Documents/Research/Paper/DMNet-denoising/create_gt/denoise_data_process.py) -> `igl_gt_denoise` (C++) -> `Refined Graph & Norm Params` -> [denoise_data_process.py](file:///Users/minureghunath/Documents/Research/Paper/DMNet-denoising/create_gt/denoise_data_process.py) (Validation & Normalization) -> `Ready for Network`
+
+---
+
+## 1. Orchestrator: [denoise_data_process.py](file:///Users/minureghunath/Documents/Research/Paper/DMNet-denoising/create_gt/denoise_data_process.py)
+This Python script manages the pipeline.
+
+### **Step 1: Data Matching**
+- It scans the `--noisy` folder for `.ply` or `.xyz` files.
+- It finds the corresponding clean file in `--clean` by checking substrings (e.g., `clean.xyz` matches `clean_noise_01.xyz`).
+
+### **Step 2: C++ Execution ([meshing_denoise.cc](file:///Users/minureghunath/Documents/Research/Paper/DMNet-denoising/create_gt/meshing_denoise.cc))**
+- It runs the compiled C++ tool `igl_gt_denoise` on the **Noisy Point Cloud**.
+- **Why C++?** The model requires a Delaunay Triangulation (DT) of the point cloud to define graph connectivity. CGAL (The Computational Geometry Algorithms Library) in C++ is the industry standard for robust, efficient DT generation.
+
+### **Step 3: Normalization & Alignment**
+- **Critical for Denoising**: The network cannot predict arbitrary coordinates. Input data must be normalized (centered at origin, scaled to unit sphere).
+- The C++ tool calculates this normalization for the *noisy* input and saves the parameters (`transform.txt`: `center_x, center_y, center_z, scale`).
+- **The Python script reads this transform** and applies the *exact same* transformation to the **Clean Point Cloud**. This ensures that the network is trained to predict the offset from the *normalized* noisy point to the *normalized* clean point.
+
+### **Step 4: Adjacency Building ([data_process.py](file:///Users/minureghunath/Documents/Research/Paper/DMNet-denoising/create_gt/data_process.py))**
+- Once C++ outputs the raw Delaunay cells (tetrahedrons), the Python script calls [build_tet_adj_facet](file:///Users/minureghunath/Documents/Research/Paper/DMNet-denoising/create_gt/data_process.py#8-46).
+- This converts raw cell indices into adjacency matrices (which cell borders which?) required by the R-GCN (Recurrent Graph Convolutional Network) layers.
+
+---
+
+## 2. Geometric Engine: [meshing_denoise.cc](file:///Users/minureghunath/Documents/Research/Paper/DMNet-denoising/create_gt/meshing_denoise.cc)
+This is the specialized backend (derived from the original DMNet [meshing.cc](file:///Users/minureghunath/Documents/Research/Paper/DMNet-denoising/create_gt/meshing.cc) but stripped of mesh surface dependencies).
+
+### **Step 1: Input & Noise**
+- Reads the Noisy Point Cloud.
+- (Optional) Adds extra Gaussian noise if `noise_level > 0` (usually 0 for denoising tasks where input is already noisy).
+
+### **Step 2: Normalization**
+- Computes Bounding Box.
+- Centers points: $P_{new} = (P - Center) / Scale$.
+- Saves `transform.txt`.
+
+### **Step 3: Delaunay Triangulation**
+- Uses `CGAL::Delaunay_triangulation_3`.
+- Converts 3D points into a continuous volume of tetrahedrons.
+- **Why?** Standard PointNet uses KNN (Euclidean distance). DMNet uses Delaunay connections, which are topologically more robust and adapt to point density (connecting distant points in sparse areas, close points in dense areas).
+
+### **Step 4: Output**
+- **`input_points.ply`**: The normalized input.
+- **`output_tetrahedron_adj`**: Connectivity graph.
+- **`output_cell_vertex_idx.txt`**: Which points form each tetrahedron.
+- **`ref_point_label.txt`**: (Dummy) DMNet was originally a classification network (Occupancy Prediction). We write dummy labels here because the data loader expects them, but our modified Loss Function ignores them and uses MSE on point offsets instead.

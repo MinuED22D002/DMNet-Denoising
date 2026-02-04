@@ -130,6 +130,10 @@ def create_full_data(scan, cfg):
     current_xyz = torch.from_numpy(current_xyz).float()
     out.pos = current_xyz # Store N noisy points positions
 
+    if len(scan.pc.normals) == 0:
+        print("Warning: No normals found. Estimating normals...")
+        scan.pc.estimate_normals(search_param=open3d.geometry.KDTreeSearchParamHybrid(radius=0.1, max_nn=30))
+        
     current_normals = torch.from_numpy(np.asarray(scan.pc.normals)).float()
     current_normals = f.normalize(current_normals, p=2, dim=1)
     

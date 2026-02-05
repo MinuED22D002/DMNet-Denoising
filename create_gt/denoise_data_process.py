@@ -154,12 +154,23 @@ def process_denoising_data(noisy_dir, clean_dir, output_dir, dummy_mesh_path=Non
                      origin = np.array(vals[:3])
                      scale = vals[3]
                      
+                     # Load clean points
                      pcd_clean = o3d.io.read_point_cloud(dest_clean)
                      pts = np.asarray(pcd_clean.points)
                      pts_norm = (pts - origin) / scale
                      pcd_clean.points = o3d.utility.Vector3dVector(pts_norm)
+                     pcd_clean.estimate_normals(search_param=o3d.geometry.KDTreeSearchParamHybrid(radius=0.1, max_nn=30))
                      o3d.io.write_point_cloud(dest_clean, pcd_clean)
-                     print(f"Normalized {dest_clean}")
+                     print(f"Normalized and added normals to {dest_clean}")
+
+        # 3.6 Estimate normals for sampled_points.ply (if missing)
+        dest_noisy_ply = os.path.join(scan_out_dir, "sampled_points.ply")
+        if os.path.exists(dest_noisy_ply):
+            pcd_noisy = o3d.io.read_point_cloud(dest_noisy_ply)
+            if not pcd_noisy.has_normals():
+                 pcd_noisy.estimate_normals(search_param=o3d.geometry.KDTreeSearchParamHybrid(radius=0.1, max_nn=30))
+                 o3d.io.write_point_cloud(dest_noisy_ply, pcd_noisy)
+                 print(f"Added normals to {dest_noisy_ply}")
              except Exception as e:
                  print(f"Failed to normalize clean points: {e}")
             

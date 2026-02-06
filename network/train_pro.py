@@ -91,6 +91,9 @@ for epoch in range(init_epoch, cfg['epochs']):
 
         _, loss1, loss2, loss3 = train_model(data_list)
         loss = weight1 * loss1 + weight2 * loss2 + weight3 * loss3
+        # Average loss across GPUs (required for multi-GPU training)
+        if torch.is_tensor(loss) and loss.dim() > 0:
+            loss = loss.mean()
         loss.backward()
         optimizer.step()
 

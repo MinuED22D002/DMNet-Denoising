@@ -47,10 +47,28 @@ else:
 
 optimizer = torch.optim.Adam(train_model.parameters(), lr=0.001)
 exp_lr_scheduler = lr_scheduler.MultiStepLR(optimizer, [5, 10, 15], gamma=0.5)
-train_data = DTU.DTUDelDataset(cfg, "train")
-train_data_loader = DataListLoader(train_data, cfg["batch_size"], shuffle=True,num_workers=cfg["num_workers"])
-val_data = DTU.DTUDelDataset(cfg, "val")
-val_data_loader = DataListLoader(val_data, cfg["batch_size"], num_workers=cfg["num_workers"])
+
+# Check if cached data exists
+cache_train_path = os.path.join(cfg["experiment_dir"], "cached_train_data.pt")
+cache_val_path = os.path.join(cfg["experiment_dir"], "cached_val_data.pt")
+use_cache = os.path.exists(cache_train_path) and os.path.exists(cache_val_path)
+
+if use_cache:
+    print(f"Loading cached training data from {cache_train_path}")
+    cached_train = torch.load(cache_train_path)
+    print(f"Loading cached validation data from {cache_val_path}")
+    cached_val = torch.load(cache_val_path)
+    
+    # Create simple list loaders
+    train_data_loader = [cached_train]  # Wrap in list for epoch iteration
+    val_data_loader = [cached_val]
+    print(f"✓ Using cached data: {len(cached_train)} train, {len(cached_val)} val samples")
+else:
+    print("No cache found, loading from files (slower)...")
+    train_data = DTU.DTUDelDataset(cfg, "train")
+    train_data_loader = DataListLoader(train_data, cfg["batch_size"], shuffle=True,num_workers=cfg["num_workers"])
+    val_data = DTU.DTUDelDataset(cfg, "val")
+    val_data_loader = DataListLoader(val_data, cfg["batch_size"], num_workers=cfg["num_workers"])
 
 step_cnt = 0
 best_accu = 0.0

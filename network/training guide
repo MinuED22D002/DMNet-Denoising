@@ -1,0 +1,23 @@
+Input: Noisy Point Cloud (N points, 6D features)
+       Graph Structure (tetrahedra, facets)
+↓
+[Point Feature Extraction]
+  - MLP: 6D → 64D → 128D
+↓
+[Cell Feature Extraction]  
+  - Aggregate point features per tetrahedron
+  - MLP: 4D geom + point features → 128D
+↓
+[Graph Convolution Layers × 3]
+  - Message passing along tetrahedron adjacency
+  - Share information between neighboring cells
+↓
+[Facet Processing]
+  - Extract facet features from adjacent cells
+  - Learn facet-level representations
+↓
+[Point Offset Prediction]
+  - MLP: 128D → 64D → 3D offsets
+  - Output: Δx, Δy, Δz for each point
+↓
+Denoised Points = Noisy Points + Predicted Offsets

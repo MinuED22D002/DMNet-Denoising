@@ -1,4 +1,4 @@
-epochs: 1000
+epochs: 100
 cuda: True
 use_sample_label: True
 pretrained: False

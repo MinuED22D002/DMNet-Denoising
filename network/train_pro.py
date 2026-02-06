@@ -30,6 +30,8 @@ train_model = R_GCN_model.R_GCN(geo_in)
 model_path = cfg["model_path"]
 
 if cfg["cuda"]:
+    print(f"CUDA Available: {torch.cuda.is_available()}")
+    print(f"Device Count: {torch.cuda.device_count()}")
     train_model = DTParallel(train_model, device_ids=cfg["device_ids"])
     device = torch.device("cuda:{}".format(cfg["device_ids"][0]))
     train_model = train_model.to(device)
@@ -91,9 +93,21 @@ for epoch in range(init_epoch, cfg['epochs']):
 
         _, loss1, loss2, loss3 = train_model(data_list)
         loss = weight1 * loss1 + weight2 * loss2 + weight3 * loss3
+
+        # Average loss across GPUs (required for multi-GPU training)
+        #if torch.is_tensor(loss) and loss.dim() > 0:
+        #    loss = loss.mean()
+        
         # Average loss across GPUs (required for multi-GPU training)
         if torch.is_tensor(loss) and loss.dim() > 0:
             loss = loss.mean()
+        if torch.is_tensor(loss1) and loss1.dim() > 0:
+            loss1 = loss1.mean()
+        if torch.is_tensor(loss2) and loss2.dim() > 0:
+            loss2 = loss2.mean()
+        if torch.is_tensor(loss3) and loss3.dim() > 0:
+            loss3 = loss3.mean()
+    
         loss.backward()
         optimizer.step()
 

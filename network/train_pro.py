@@ -9,8 +9,14 @@ import R_GCN_model
 import numpy as np
 from torch.optim import lr_scheduler
 from torch.utils.tensorboard import SummaryWriter
+from torch.cuda.amp import GradScaler, autocast
 
 torch.multiprocessing.set_sharing_strategy('file_system')
+
+# Speed optimizations
+torch.backends.cudnn.benchmark = True
+torch.backends.cuda.matmul.allow_tf32 = True
+torch.backends.cudnn.allow_tf32 = True
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--config', default="./train_cfg.yaml", type=str, help='Path to config file')
@@ -36,6 +42,11 @@ if cfg["cuda"]:
     device = torch.device("cuda:{}".format(cfg["device_ids"][0]))
     train_model = train_model.to(device)
 
+    # torch.compile for PyTorch 2.0+ (10-30% speedup)
+    if hasattr(torch, 'compile'):
+        print("Using torch.compile() for faster training")
+        train_model = torch.compile(train_model)
+
 if cfg["pretrained"]:
     if os.path.exists(model_path):
         train_model.load_state_dict(torch.load(model_path, map_location="cpu"))
@@ -46,7 +57,10 @@ else:
     print("training model from scratch")
 
 optimizer = torch.optim.Adam(train_model.parameters(), lr=0.001)
-exp_lr_scheduler = lr_scheduler.MultiStepLR(optimizer, [5, 10, 15], gamma=0.5)
+exp_lr_scheduler = lr_scheduler.MultiStepLR(optimizer, [50, 100, 150], gamma=0.5)
+
+# Mixed precision training for ~2x speedup
+scaler = GradScaler()
 
 # Check if cached data exists
 cache_train_path = os.path.join(cfg["experiment_dir"], "cached_train_data.pt")
@@ -66,9 +80,9 @@ if use_cache:
 else:
     print("No cache found, loading from files (slower)...")
     train_data = DTU.DTUDelDataset(cfg, "train")
-    train_data_loader = DataListLoader(train_data, cfg["batch_size"], shuffle=True,num_workers=cfg["num_workers"])
+    train_data_loader = DataListLoader(train_data, cfg["batch_size"], shuffle=True, num_workers=cfg["num_workers"], pin_memory=True)
     val_data = DTU.DTUDelDataset(cfg, "val")
-    val_data_loader = DataListLoader(val_data, cfg["batch_size"], num_workers=cfg["num_workers"])
+    val_data_loader = DataListLoader(val_data, cfg["batch_size"], num_workers=cfg["num_workers"], pin_memory=True)
 
 step_cnt = 0
 best_accu = 0.0
@@ -103,15 +117,14 @@ val_data_lists = val_data_loader
 
 for epoch in range(init_epoch, cfg['epochs']):
     for data_list in data_lists:
-        for d in [torch.device('cuda:{}'.format(cfg["device_ids"][i])) for i in range(len(cfg["device_ids"]))]:
-            with torch.cuda.device(d):
-                torch.cuda.empty_cache()
         train_model.train()
-        optimizer.zero_grad()
+        optimizer.zero_grad(set_to_none=True)
 
-        _, loss1, loss2, loss3 = train_model(data_list)
-        loss = weight1 * loss1 + weight2 * loss2 + weight3 * loss3
-        
+        # Mixed precision forward pass
+        with autocast():
+            _, loss1, loss2, loss3 = train_model(data_list)
+            loss = weight1 * loss1 + weight2 * loss2 + weight3 * loss3
+
         # Average loss across GPUs (required for multi-GPU training)
         if torch.is_tensor(loss) and loss.dim() > 0:
             loss = loss.mean()
@@ -121,9 +134,11 @@ for epoch in range(init_epoch, cfg['epochs']):
             loss2 = loss2.mean()
         if torch.is_tensor(loss3) and loss3.dim() > 0:
             loss3 = loss3.mean()
-        
-        loss.backward()
-        optimizer.step()
+
+        # Mixed precision backward pass
+        scaler.scale(loss).backward()
+        scaler.step(optimizer)
+        scaler.update()
 
         step_cnt += 1
         # cell_pred_label = cell_pred.max(dim=1)[1] # Removed for denoising
@@ -132,9 +147,6 @@ for epoch in range(init_epoch, cfg['epochs']):
         outstr = "Train epoch %d, step %d, loss %.6f, DenoiseMSE %.6f" \
                  % (epoch, step_cnt, loss.detach().item(), loss1.detach().item())
         print(outstr)
-        for d in [torch.device('cuda:{}'.format(cfg["device_ids"][i])) for i in range(len(cfg["device_ids"]))]:
-            with torch.cuda.device(d):
-                torch.cuda.empty_cache()
 
         tmp_loss1 += loss1.detach().item()
         tmp_loss2 += loss2.detach().item()
@@ -144,7 +156,7 @@ for epoch in range(init_epoch, cfg['epochs']):
         # tmp_label0 += label0_num # Removed
         # tmp_label1 += label1_num # Removed
 
-        if tmp_cnt % 500 == 0 and tmp_cnt != 0:
+        if tmp_cnt % 2000 == 0 and tmp_cnt != 0:  # Save less frequently
             extra_output_dir = os.path.split(model_path)[0] + '_epoch_' + str(epoch)
             if not os.path.exists(extra_output_dir):
                 os.mkdir(extra_output_dir)
@@ -168,7 +180,7 @@ for epoch in range(init_epoch, cfg['epochs']):
         os.makedirs(output_dir)
     print("Saving model", cfg["weight_ratio"])
 
-    if epoch % 1 == 0:
+    if epoch % 5 == 0:  # Validate every 5 epochs for speed
         val_tmp_loss, val_tmp_loss1, val_tmp_loss2, val_tmp_loss3 = \
             train_utils.val(val_data_lists, cfg, train_model, weight1, weight2, weight3)
         writer.add_scalar("val_tmp_loss", val_tmp_loss, epoch)

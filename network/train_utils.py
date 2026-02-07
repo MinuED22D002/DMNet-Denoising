@@ -2,6 +2,7 @@ import torch
 import os
 import numpy as np
 import yaml
+from torch.cuda.amp import autocast
 
 
 def load_config(cfg_path):
@@ -32,12 +33,9 @@ def val(val_data_lists, cfg, train_model, weight1, weight2, weight3):
     val_tmp_loss3 = 0.0
     val_tmp_loss = 0.0
     val_num = 0
-    for d in [torch.device('cuda:{}'.format(cfg["device_ids"][i])) for i in range(len(cfg["device_ids"]))]:
-        with torch.cuda.device(d):
-            torch.cuda.empty_cache()
     for val_data_list in val_data_lists:
         train_model.eval()
-        with torch.no_grad():
+        with torch.no_grad(), autocast():
             val_cell_pred, val_loss1, val_loss2, val_loss3 = train_model(val_data_list)
             val_loss = weight1 * val_loss1 + weight2 * val_loss2 + weight3 * val_loss3
             val_tmp_loss1 += val_loss1.detach().item()

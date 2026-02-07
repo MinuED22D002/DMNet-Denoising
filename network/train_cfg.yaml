@@ -1,11 +1,30 @@
-epochs: 1000
-cuda: False
-# ...
-device_ids: []
-ref_num: 3
-weight_ratio: [0.9, 0.1, 1.0]
+# Optimized for speed
+epochs: 200
+cuda: True
+pretrained: False
+use_sample_label: True
+
+# Data loading - increase num_workers for faster I/O
+batch_size: 2
+num_workers: 8
+k_n: 32
+
+# GPU config - dual GPUs in Docker
+device_ids: [4, 5]
+
+# Data paths
+train_name_file: "./train_name.txt"
+val_name_file: "./val_name.txt"
+test_name_file: "./test_name.txt"
 data_root_dir: "../example/processed_data/"
 val_data_root_dir: "../example/processed_data/"
 experiment_dir: "../example/exp/"
+
+# Model
 model_path: "model/model/model.pt"
 SummaryWriter_path: "log"
+
+# Loss weights [denoising_mse, loss2, loss3]
+# Prioritize denoising loss
+ref_num: 3
+weight_ratio: [1.0, 0.0, 0.0]

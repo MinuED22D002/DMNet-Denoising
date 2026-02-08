@@ -62,21 +62,40 @@ exp_lr_scheduler = lr_scheduler.MultiStepLR(optimizer, [50, 100, 150], gamma=0.5
 # Mixed precision training for ~2x speedup
 scaler = GradScaler()
 
-# Check if cached data exists
-cache_train_path = os.path.join(cfg["experiment_dir"], "cached_train_data.pt")
-cache_val_path = os.path.join(cfg["experiment_dir"], "cached_val_data.pt")
-use_cache = os.path.exists(cache_train_path) and os.path.exists(cache_val_path)
+# Check if cached data exists (per-file format)
+cache_train_dir = os.path.join(cfg["experiment_dir"], "cached_train")
+cache_val_dir = os.path.join(cfg["experiment_dir"], "cached_val")
+use_cache = os.path.isdir(cache_train_dir) and os.path.isdir(cache_val_dir)
 
 if use_cache:
-    print(f"Loading cached training data from {cache_train_path}")
-    cached_train = torch.load(cache_train_path)
-    print(f"Loading cached validation data from {cache_val_path}")
-    cached_val = torch.load(cache_val_path)
-    
-    # Create simple list loaders
-    train_data_loader = [cached_train]  # Wrap in list for epoch iteration
-    val_data_loader = [cached_val]
-    print(f"✓ Using cached data: {len(cached_train)} train, {len(cached_val)} val samples")
+    import random as _random
+
+    class CachedDataLoader:
+        """Loads cached .pt files on-the-fly in batches to avoid holding all data in RAM."""
+        def __init__(self, cache_dir, batch_size, shuffle=False):
+            with open(os.path.join(cache_dir, 'count.txt')) as f:
+                self.count = int(f.read().strip())
+            self.cache_dir = cache_dir
+            self.batch_size = batch_size
+            self.shuffle = shuffle
+
+        def __len__(self):
+            return (self.count + self.batch_size - 1) // self.batch_size
+
+        def __iter__(self):
+            indices = list(range(self.count))
+            if self.shuffle:
+                _random.shuffle(indices)
+            for start in range(0, self.count, self.batch_size):
+                batch = []
+                for i in indices[start:start + self.batch_size]:
+                    batch.append(torch.load(os.path.join(self.cache_dir, f'{i}.pt')))
+                yield batch
+
+    batch_size = cfg["batch_size"]
+    train_data_loader = CachedDataLoader(cache_train_dir, batch_size, shuffle=True)
+    val_data_loader = CachedDataLoader(cache_val_dir, batch_size, shuffle=False)
+    print(f"Using cached data: {train_data_loader.count} train, {val_data_loader.count} val samples (batch_size={batch_size})")
 else:
     print("No cache found, loading from files (slower)...")
     train_data = DTU.DTUDelDataset(cfg, "train")

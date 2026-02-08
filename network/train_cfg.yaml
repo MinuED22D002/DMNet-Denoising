@@ -9,8 +9,8 @@ batch_size: 2
 num_workers: 8
 k_n: 32
 
-# GPU config - dual GPUs in Docker
-device_ids: [4, 5]
+# GPU config - mapped as 0,1 inside Docker (host GPUs 4,6)
+device_ids: [0, 1]
 
 # Data paths
 train_name_file: "./train_name.txt"

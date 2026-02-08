@@ -42,10 +42,10 @@ if cfg["cuda"]:
     device = torch.device("cuda:{}".format(cfg["device_ids"][0]))
     train_model = train_model.to(device)
 
-    # torch.compile for PyTorch 2.0+ (10-30% speedup)
-    if hasattr(torch, 'compile'):
-        print("Using torch.compile() for faster training")
-        train_model = torch.compile(train_model)
+    # torch.compile disabled - causes excessive recompilation with variable-shaped graph data
+    # if hasattr(torch, 'compile'):
+    #     print("Using torch.compile() for faster training")
+    #     train_model = torch.compile(train_model)
 
 if cfg["pretrained"]:
     if os.path.exists(model_path):
@@ -89,7 +89,7 @@ if use_cache:
             for start in range(0, self.count, self.batch_size):
                 batch = []
                 for i in indices[start:start + self.batch_size]:
-                    batch.append(torch.load(os.path.join(self.cache_dir, f'{i}.pt')))
+                    batch.append(torch.load(os.path.join(self.cache_dir, f'{i}.pt'), weights_only=False))
                 yield batch
 
     batch_size = cfg["batch_size"]

@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """
-Pre-cache all training data to speed up subsequent epochs by 10x.
+Pre-cache all training data to speed up subsequent epochs.
 Run once: python3 cache_dataset.py
 Then training will load from cached tensors instead of recomputing.
+
+Saves each sample as an individual .pt file to avoid RAM exhaustion.
 """
 
 import torch
@@ -30,37 +32,38 @@ val_data = DTU.DTUDelDataset(cfg, "val")
 print(f"\nFound {len(train_data)} training samples")
 print(f"Found {len(val_data)} validation samples")
 
+def cache_dataset(dataset, name, cfg):
+    cache_dir = os.path.join(cfg['experiment_dir'], f'cached_{name}')
+    os.makedirs(cache_dir, exist_ok=True)
+
+    loader = DataListLoader(dataset, 1, num_workers=min(cfg['num_workers'], 4))
+    count = 0
+
+    for i, batch in enumerate(tqdm(loader, desc=name)):
+        sample_path = os.path.join(cache_dir, f'{i}.pt')
+        torch.save(batch[0], sample_path)
+        count += 1
+
+    # Save count for the loader to know how many files exist
+    with open(os.path.join(cache_dir, 'count.txt'), 'w') as f:
+        f.write(str(count))
+
+    print(f"Saved {count} samples to: {cache_dir}")
+    return count
+
 # Cache training data
 print("\n" + "="*60)
 print("CACHING TRAINING DATA...")
 print("="*60)
-train_loader = DataListLoader(train_data, 1, num_workers=cfg['num_workers'])
-cached_train = []
-
-for i, batch in enumerate(tqdm(train_loader, desc="Training")):
-    cached_train.append(batch[0])
-
-cache_path = os.path.join(cfg['experiment_dir'], 'cached_train_data.pt')
-os.makedirs(os.path.dirname(cache_path), exist_ok=True)
-torch.save(cached_train, cache_path)
-print(f"✓ Saved to: {cache_path}")
+train_count = cache_dataset(train_data, "train", cfg)
 
 # Cache validation data
 print("\n" + "="*60)
 print("CACHING VALIDATION DATA...")
 print("="*60)
-val_loader = DataListLoader(val_data, 1, num_workers=cfg['num_workers'])
-cached_val = []
-
-for i, batch in enumerate(tqdm(val_loader, desc="Validation")):
-    cached_val.append(batch[0])
-
-cache_path_val = os.path.join(cfg['experiment_dir'], 'cached_val_data.pt')
-torch.save(cached_val, cache_path_val)
-print(f"✓ Saved to: {cache_path_val}")
+val_count = cache_dataset(val_data, "val", cfg)
 
 print("\n" + "="*60)
 print("PREPROCESSING COMPLETE!")
 print("="*60)
-print("Next step: Modify train_pro.py to load from cache.")
-print("This will make training 10x faster!")
+print(f"Cached {train_count} train + {val_count} val samples as individual files.")

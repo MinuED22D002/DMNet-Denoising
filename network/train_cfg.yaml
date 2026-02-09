@@ -5,11 +5,11 @@ pretrained: False
 use_sample_label: True
 
 # Data loading - increase num_workers for faster I/O
-batch_size: 2
+batch_size: 1
 num_workers: 8
 k_n: 32
-
 # GPU config - mapped as 0,1 inside Docker (host GPUs 4,6)
+# GPU config - using only GPU 1 (host GPU 6, more free memory)
 device_ids: [1]
 
 # Data paths

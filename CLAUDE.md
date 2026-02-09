@@ -27,28 +27,29 @@ make
 ```
 
 **Dependencies:**
-- Python 3.9, PyTorch 1.12.1, Open3D 0.16, PyYAML
-- C++: CGAL, Boost, libgmp-dev
+- Python 3.9, PyTorch 1.12.1+, Open3D 0.16, PyYAML
+- C++: CGAL, Boost, libgmp-dev, libmpfr-dev
+- Docker: Dockerfile provided (Ubuntu 20.04 base, builds Open3D from source)
 
 ## Workflow Commands
 
 **Training:**
 ```bash
 cd network
-python cache_dataset.py    # Pre-cache data for 10x faster training (run once)
+python cache_dataset.py    # Pre-cache data to cached_train_data.pt / cached_val_data.pt (run once, 10x speedup)
 python train_pro.py        # Start training
 ```
 
 **Testing/Inference:**
 ```bash
 cd network
-python test_pro.py         # Outputs to output_denoised/
+python test_pro.py         # Outputs denoised PLY files to experiment_dir/output_denoised/
 ```
 
 **Data Preprocessing (for new data):**
 ```bash
 cd create_gt
-python denoise_data_process.py --noisy <path> --clean <path> --output <path>
+python denoise_data_process.py --noisy <dir> --clean <dir> --out <dir>
 python data_process.py     # Build adjacency matrices
 ```
 
@@ -73,29 +74,46 @@ Point Cloud Offsets (dx, dy, dz per vertex)
 Denoised Point Cloud Output
 ```
 
-### Key Components
-
-| Directory | Purpose |
-|-----------|---------|
-| `create_gt/` | Data preprocessing - Delaunay triangulation (C++) and normalization |
-| `network/` | PyTorch R-GCN model, training/testing scripts, data loaders |
-| `create_mesh/` | Mesh generation from network output |
-
 ### Network Architecture (network/R_GCN_model.py)
 - **Input**: Point features (6D: xyz + normals)
-- **Encoder**: ResBlocks (64→256→64)
-- **Graph Convolutions**: Two cycles of Facet↔Node message passing
-- **Output Head**: `node_offset_head` predicts (dx, dy, dz) per vertex
-- **Loss**: MSE between predicted and ground truth point offsets
+- **Encoder**: ResBlocks (64->256->64) with LeakyReLU(0.2)
+- **Graph Convolutions**: Two cycles of Facet<->Node message passing with attention pooling (8 heads), dropout 0.2 between cycles
+- **Output Head**: `node_offset_head` (SharedMLP) predicts (dx, dy, dz) per vertex
+- **Loss**: MSE between predicted and ground truth positions (`compute_denoising_loss` in losses.py)
+
+### Loss Function (network/losses.py)
+`compute_denoising_loss()` aggregates per-cell offsets to per-vertex offsets via `scatter_mean()`, filters out infinite cells (index == -1), then computes MSE between `noisy_pos + predicted_offsets` and `clean_pc`. Falls back to Chamfer distance if point counts differ.
 
 ### Key Files
 - `network/train_pro.py` - Training entry point
 - `network/test_pro.py` - Inference entry point
 - `network/R_GCN_model.py` - Main model (R_GCN class)
-- `network/DT_data.py` - Graph data structures (ScanData, DT_Data)
-- `network/losses.py` - Loss functions (`compute_denoising_loss`)
+- `network/DT_data.py` - Graph data structures (ScanData, DT_Data); denoising adds `clean_pc` and `pos` fields
+- `network/losses.py` - Loss functions
+- `network/cache_dataset.py` - Pre-loads all data into RAM, saves to `.pt` files in experiment_dir
 - `network/train_cfg.yaml` - Training configuration
 - `create_gt/meshing_denoise.cc` - C++ Delaunay triangulation engine
+
+## Training Details
+
+- **Optimizer**: Adam, lr=0.001
+- **LR Scheduler**: MultiStepLR, decay at epochs [50, 100, 150], gamma=0.5
+- **AMP**: Mixed precision training with `torch.cuda.amp.GradScaler` and `autocast()`
+- **Speed flags**: `cudnn.benchmark=True`, `matmul.allow_tf32`, `cudnn.allow_tf32`
+- **torch.compile()**: Enabled when PyTorch 2.0+ is available
+- **Checkpoints**: Best model saved on lowest val loss; extra checkpoints every 5 epochs and every 2000 steps
+- **Validation**: Runs every 5 epochs (not every epoch)
+
+## Configuration
+
+Training config in `network/train_cfg.yaml`:
+- `weight_ratio: [1.0, 0.0, 0.0]` - Loss weights [denoising_mse, loss2, loss3]; only denoising MSE is active
+- `ref_num: 3` - Reference clean points per noisy point
+- `k_n: 32` - KNN neighbors for normal estimation
+- `device_ids: [4, 5]` - **Must be adjusted for your GPU setup**
+- `batch_size: 2` - Must be <= len(device_ids)
+- `data_root_dir` / `val_data_root_dir` - Paths to processed data
+- `experiment_dir` - Output directory for checkpoints, cache, and results
 
 ## Important Implementation Notes
 
@@ -103,14 +121,6 @@ Denoised Point Cloud Output
 
 2. **Dummy Labels**: The data loader expects `ref_point_label.txt` files (legacy from classification). These contain dummy values; the denoising loss ignores them.
 
-3. **Multi-GPU**: Uses custom `DTParallel` wrapper with `DataListLoader` for multi-GPU training.
+3. **Multi-GPU**: Uses custom `DTParallel` wrapper with `DataListLoader`. Requires `batch_size <= len(device_ids)`. Data scattered per GPU, loss averaged with `.mean()`.
 
-4. **Memory**: Use `cache_dataset.py` to pre-load data into GPU memory before training iterations.
-
-## Configuration
-
-Training config in `network/train_cfg.yaml`:
-- `weight_ratio: [0.9, 0.1, 1.0]` - Loss weights
-- `ref_num: 3` - Reference clean points per noisy point
-- `k_n: 32` - KNN neighbors for normal estimation
-- `data_root_dir` - Path to processed data
+4. **Caching**: `cache_dataset.py` loads all data into RAM and saves `cached_train_data.pt` / `cached_val_data.pt`. Training auto-detects and uses these files if present.

@@ -198,6 +198,7 @@ for epoch in range(init_epoch, cfg['epochs']):
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
     print("Saving model", cfg["weight_ratio"])
+    torch.save(train_model.state_dict(), model_path)
 
     if epoch % 5 == 0:  # Validate every 5 epochs for speed
         val_tmp_loss, val_tmp_loss1, val_tmp_loss2, val_tmp_loss3 = \

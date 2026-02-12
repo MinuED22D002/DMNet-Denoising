@@ -100,7 +100,7 @@ Denoised Point Cloud Output
 - **LR Scheduler**: MultiStepLR, decay at epochs [50, 100, 150], gamma=0.5
 - **AMP**: Mixed precision training with `torch.cuda.amp.GradScaler` and `autocast()`
 - **Speed flags**: `cudnn.benchmark=True`, `matmul.allow_tf32`, `cudnn.allow_tf32`
-- **torch.compile()**: Enabled when PyTorch 2.0+ is available
+- **torch.compile()**: Disabled (commented out) — causes excessive recompilation with variable-shaped graph data
 - **Checkpoints**: Best model saved on lowest val loss; extra checkpoints every 5 epochs and every 2000 steps
 - **Validation**: Runs every 5 epochs (not every epoch)
 
@@ -110,8 +110,8 @@ Training config in `network/train_cfg.yaml`:
 - `weight_ratio: [1.0, 0.0, 0.0]` - Loss weights [denoising_mse, loss2, loss3]; only denoising MSE is active
 - `ref_num: 3` - Reference clean points per noisy point
 - `k_n: 32` - KNN neighbors for normal estimation
-- `device_ids: [4, 5]` - **Must be adjusted for your GPU setup**
-- `batch_size: 2` - Must be <= len(device_ids)
+- `device_ids: [1]` - **Must be adjusted for your GPU setup**
+- `batch_size: 1` - Must be <= len(device_ids)
 - `data_root_dir` / `val_data_root_dir` - Paths to processed data
 - `experiment_dir` - Output directory for checkpoints, cache, and results
 

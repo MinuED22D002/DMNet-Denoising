@@ -54,10 +54,10 @@ print(f"Loaded {len(test_data)} test samples")
 
 with torch.no_grad():
     for test_data_list in test_data_loader:
-        node_offsets_per_cell, _, _, _ = test_model(test_data_list)
-
         # Assume batch_size=1
         data = test_data_list[0]
+
+        node_offsets_per_cell, _, _, _ = test_model(data.to(device))
 
         offsets_flat = node_offsets_per_cell.reshape(-1, 3)
         indices_flat = data.cell_vertex_idx.reshape(-1).long().to(device)

@@ -1,5 +1,4 @@
-epochs: 1000
-cuda: True
+epochs: 100
 use_sample_label: True
 pretrained: True
 train_name_file: "./train_name.txt"

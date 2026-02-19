@@ -21,3 +21,181 @@ Input: Noisy Point Cloud (N points, 6D features)
   - Output: Δx, Δy, Δz for each point
 ↓
 Denoised Points = Noisy Points + Predicted Offsets
+
+
+
+
+
+You start with a noisy 3D point cloud.
+Instead of treating points independently or using fixed k-NN neighborhoods, you:
+
+👉 Build a Delaunay triangulation (DT)
+👉 Use its tetrahedra and facets as a graph
+👉 Learn how noise behaves using this geometry-aware structure
+👉 Predict small corrections (offsets) to each point
+
+The network does not generate new points — it shifts noisy points slightly to cleaner positions.
+
+Step-by-step explanation
+1️⃣ Input: Noisy Point Cloud + DT Graph
+
+What comes in
+
+A noisy point cloud with N points
+
+Each point has 6D features (typically XYZ + normals / curvature / intensity)
+
+A Delaunay triangulation built over the point set:
+
+Tetrahedra → volumetric neighborhoods
+
+Facets (triangles) → shared boundaries between tetrahedra
+
+Why DT?
+
+DT adapts to point density
+
+Encodes true geometric neighbors
+
+Naturally captures edges, corners, and surface discontinuities
+
+2️⃣ Point Feature Extraction (MLP)
+
+What happens
+
+Each point is processed independently by a shared MLP:
+
+6D → 64D → 128D
+
+
+Output: a 128D feature vector per point
+
+Why
+
+Converts raw coordinates/features into a learnable embedding
+
+Still local — no neighborhood mixing yet
+
+Same MLP is used for all points (weight sharing)
+
+3️⃣ Cell (Tetrahedron) Feature Extraction
+
+Each tetrahedron has 4 vertices.
+
+What happens
+
+Collect the 128D features of its 4 points
+
+Aggregate them (mean / max / concat)
+
+Add geometric properties of the tetrahedron:
+
+volume
+
+edge lengths
+
+aspect ratio
+
+centroid
+
+Then pass through another MLP:
+
+(point features + geometry) → 128D cell feature
+
+
+Why
+
+Noise patterns are easier to understand in local volumes
+
+Tetrahedra encode local surface smoothness vs irregularity
+
+Gives the network structure-aware context
+
+4️⃣ Graph Convolution on DT Cells (×3 layers)
+
+Now tetrahedra are treated as nodes in a graph.
+
+Edges
+
+Two tetrahedra are neighbors if they share a facet
+
+What happens
+
+Graph convolution / message passing:
+
+Each cell exchanges information with adjacent cells
+
+Repeated 3 times to expand context
+
+Why
+
+Allows information flow across the surface
+
+Helps distinguish:
+
+real sharp features (consistent across neighbors)
+
+noise (random, inconsistent)
+
+This is where geometric deep learning truly happens.
+
+5️⃣ Facet-Level Processing (Edge Awareness)
+
+Each facet (triangle) lies between two tetrahedra.
+
+What happens
+
+Combine features from the two neighboring cells
+
+Learn a facet representation
+
+Why
+
+Sharp edges and corners lie along facets
+
+Facets capture discontinuities
+
+Helps prevent over-smoothing across edges
+
+This is crucial for feature-preserving denoising.
+
+6️⃣ Point Offset Prediction
+
+Now information flows back to points.
+
+What happens
+
+Each point receives refined features from cells/facets
+
+Final MLP predicts a 3D offset:
+
+128D → 64D → (Δx, Δy, Δz)
+
+
+Why offsets instead of new points?
+
+Residual learning is more stable
+
+Small corrections preserve topology
+
+Common in high-quality denoising networks
+
+7️⃣ Final Output
+Denoised Point = Noisy Point + Predicted Offset
+
+
+Result
+
+Noise is reduced
+
+Sharp features are preserved
+
+Point count and structure remain unchanged
+
+Why this approach is powerful
+
+✔ Uses true geometric neighborhoods (DT)
+✔ Separates volume reasoning (cells) and boundary reasoning (facets)
+✔ Scales to large point clouds
+✔ Naturally handles high noise
+✔ Feature-preserving by design

@@ -37,6 +37,15 @@ def val(val_data_lists, cfg, train_model, weight1, weight2, weight3):
         train_model.eval()
         with torch.no_grad(), autocast():
             val_cell_pred, val_loss1, val_loss2, val_loss3 = train_model(val_data_list)
+            
+            # Average loss across GPUs if applicable
+            if val_loss1.dim() > 0:
+                val_loss1 = val_loss1.mean()
+            if val_loss2.dim() > 0:
+                val_loss2 = val_loss2.mean()
+            if val_loss3.dim() > 0:
+                val_loss3 = val_loss3.mean()
+                
             val_loss = weight1 * val_loss1 + weight2 * val_loss2 + weight3 * val_loss3
             val_tmp_loss1 += val_loss1.detach().item()
             val_tmp_loss2 += val_loss2.detach().item()

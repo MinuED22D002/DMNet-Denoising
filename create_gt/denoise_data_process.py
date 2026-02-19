@@ -115,7 +115,7 @@ def process_denoising_data(noisy_dir, clean_dir, output_dir, dummy_mesh_path=Non
         clean_path = os.path.join(clean_dir, clean_filename)
         print(f"Mapping Noisy: {f} -> Clean: {clean_filename}")
             
-        # Create output subfolder
+        # Create output subfolder      
         scan_name = f.split('.')[0]
         scan_out_dir = os.path.join(output_dir, scan_name)
         if not os.path.exists(scan_out_dir):
@@ -163,14 +163,14 @@ def process_denoising_data(noisy_dir, clean_dir, output_dir, dummy_mesh_path=Non
                      o3d.io.write_point_cloud(dest_clean, pcd_clean)
                      print(f"Normalized and added normals to {dest_clean}")
 
-        # 3.6 Estimate normals for sampled_points.ply (if missing)
-        dest_noisy_ply = os.path.join(scan_out_dir, "sampled_points.ply")
-        if os.path.exists(dest_noisy_ply):
-            pcd_noisy = o3d.io.read_point_cloud(dest_noisy_ply)
-            if not pcd_noisy.has_normals():
-                 pcd_noisy.estimate_normals(search_param=o3d.geometry.KDTreeSearchParamHybrid(radius=0.1, max_nn=30))
-                 o3d.io.write_point_cloud(dest_noisy_ply, pcd_noisy)
-                 print(f"Added normals to {dest_noisy_ply}")
+                    # 3.6 Estimate normals for sampled_points.ply (if missing)
+                     dest_noisy_ply = os.path.join(scan_out_dir, "sampled_points.ply")
+                     if os.path.exists(dest_noisy_ply):
+                        pcd_noisy = o3d.io.read_point_cloud(dest_noisy_ply)
+                        if not pcd_noisy.has_normals():
+                            pcd_noisy.estimate_normals(search_param=o3d.geometry.KDTreeSearchParamHybrid(radius=0.1, max_nn=30))
+                            o3d.io.write_point_cloud(dest_noisy_ply, pcd_noisy)
+                            print(f"Added normals to {dest_noisy_ply}")
              except Exception as e:
                  print(f"Failed to normalize clean points: {e}")
             

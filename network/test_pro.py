@@ -32,7 +32,7 @@ test_model = R_GCN_model.R_GCN(geo_in)
 
 model_path = cfg["model_path"]
 device = torch.device("cpu")
-if cfg["cuda"] and torch.cuda.is_available():
+if cfg.get("cuda", True) and torch.cuda.is_available():
     device = torch.device("cuda:{}".format(cfg["device_ids"][0]))
 
 # Load checkpoint, stripping 'module.' prefix from DTParallel-saved weights

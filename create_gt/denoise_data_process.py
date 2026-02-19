@@ -63,8 +63,14 @@ def process_denoising_data(noisy_dir, clean_dir, output_dir, dummy_mesh_path=Non
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
 
-    # Support both .ply and .xyz
-    files = [f for f in os.listdir(noisy_dir) if f.endswith('.ply') or f.endswith('.xyz')]
+    # Support recursive search for both .ply and .xyz
+    files = []
+    for root, _, filenames in os.walk(noisy_dir):
+        for filename in filenames:
+            if filename.endswith('.ply') or filename.endswith('.xyz'):
+                rel_path = os.path.relpath(os.path.join(root, filename), noisy_dir)
+                files.append(rel_path)
+    
     if not files:
         print(f"No .ply or .xyz files found in {noisy_dir}")
         return
@@ -115,8 +121,9 @@ def process_denoising_data(noisy_dir, clean_dir, output_dir, dummy_mesh_path=Non
         clean_path = os.path.join(clean_dir, clean_filename)
         print(f"Mapping Noisy: {f} -> Clean: {clean_filename}")
             
-        # Create output subfolder      
-        scan_name = f.split('.')[0]
+        # Create output subfolder - Flatten name to avoid nested output dirs
+        # e.g., "object/noisy.xyz" -> "object_noisy"
+        scan_name = os.path.splitext(f)[0].replace(os.sep, '_').replace('/', '_')
         scan_out_dir = os.path.join(output_dir, scan_name)
         if not os.path.exists(scan_out_dir):
             os.makedirs(scan_out_dir)

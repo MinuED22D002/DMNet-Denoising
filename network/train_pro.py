@@ -62,10 +62,24 @@ exp_lr_scheduler = lr_scheduler.MultiStepLR(optimizer, [50, 100, 150], gamma=0.5
 # Mixed precision training for ~2x speedup
 scaler = GradScaler()
 
-# Check if cached data exists (per-file format)
+# Check if cached data exists (patch-based or full-file format)
+cache_train_patches_dir = os.path.join(cfg["experiment_dir"], "cached_train_patches")
+cache_val_patches_dir = os.path.join(cfg["experiment_dir"], "cached_val_patches")
 cache_train_dir = os.path.join(cfg["experiment_dir"], "cached_train")
 cache_val_dir = os.path.join(cfg["experiment_dir"], "cached_val")
-use_cache = os.path.isdir(cache_train_dir) and os.path.isdir(cache_val_dir)
+
+if os.path.isdir(cache_train_patches_dir) and os.path.isdir(cache_val_patches_dir):
+    use_cache = True
+    train_dir = cache_train_patches_dir
+    val_dir = cache_val_patches_dir
+    print("Detected PATCH-BASED cache. Using patches for training.")
+elif os.path.isdir(cache_train_dir) and os.path.isdir(cache_val_dir):
+    use_cache = True
+    train_dir = cache_train_dir
+    val_dir = cache_val_dir
+    print("Detected FULL-FILE cache.")
+else:
+    use_cache = False
 
 if use_cache:
     import random as _random
@@ -93,9 +107,9 @@ if use_cache:
                 yield batch
 
     batch_size = cfg["batch_size"]
-    train_data_loader = CachedDataLoader(cache_train_dir, batch_size, shuffle=True)
-    val_data_loader = CachedDataLoader(cache_val_dir, batch_size, shuffle=False)
-    print(f"Using cached data: {train_data_loader.count} train, {val_data_loader.count} val samples (batch_size={batch_size})")
+    train_data_loader = CachedDataLoader(train_dir, batch_size, shuffle=True)
+    val_data_loader = CachedDataLoader(val_dir, batch_size, shuffle=False)
+    print(f"Using cached data: {train_data_loader.count} samples (batch_size={batch_size})")
 else:
     print("No cache found, loading from files (slower)...")
     train_data = DTU.DTUDelDataset(cfg, "train")

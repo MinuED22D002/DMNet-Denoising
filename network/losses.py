@@ -103,22 +103,50 @@ def scatter_mean(src, index, dim_size):
     return out / (count + 1e-6)
 
 
-def chamfer_distance(p1, p2):
+def chamfer_distance(p1, p2, chunk_size=1000):
     """
     p1: (B, N, 3)
     p2: (B, M, 3)
+    Chunked implementation to avoid large memory allocation for (N, M) matrix.
     """
-    x = p1.unsqueeze(2) # (B, N, 1, 3)
-    y = p2.unsqueeze(1) # (B, 1, M, 3)
-    
-    # We can't do full matrix for large point clouds, split?
-    # For now assuming batch size 1 and tolerable point count
-    dist = torch.norm(x - y, dim=-1) # (B, N, M)
-    
-    min_dist_x = torch.min(dist, dim=2)[0] # (B, N)
-    min_dist_y = torch.min(dist, dim=1)[0] # (B, M)
-    
-    return torch.mean(min_dist_x) + torch.mean(min_dist_y)
+    B, N, _ = p1.shape
+    B, M, _ = p2.shape
+    device = p1.device
+
+    # For now assuming batch size 1
+    p1 = p1.squeeze(0) # (N, 3)
+    p2 = p2.squeeze(0) # (M, 3)
+
+    # Distances from p1 to p2
+    min_dist_p1 = torch.full((N,), float('inf'), device=device)
+    for i in range(0, N, chunk_size):
+        end_i = min(i + chunk_size, N)
+        p1_chunk = p1[i:end_i].unsqueeze(1) # (chunk, 1, 3)
+        
+        # We also need to chunk p2 for very large N, M
+        for j in range(0, M, chunk_size):
+            end_j = min(j + chunk_size, M)
+            p2_chunk = p2[j:end_j].unsqueeze(0) # (1, chunk, 3)
+            
+            dist = torch.norm(p1_chunk - p2_chunk, dim=-1) # (chunk_i, chunk_j)
+            min_val, _ = torch.min(dist, dim=1)
+            min_dist_p1[i:end_i] = torch.min(min_dist_p1[i:end_i], min_val)
+
+    # Distances from p2 to p1
+    min_dist_p2 = torch.full((M,), float('inf'), device=device)
+    for i in range(0, M, chunk_size):
+        end_i = min(i + chunk_size, M)
+        p2_chunk = p2[i:end_i].unsqueeze(1) # (chunk, 1, 3)
+        
+        for j in range(0, N, chunk_size):
+            end_j = min(j + chunk_size, N)
+            p1_chunk = p1[j:end_j].unsqueeze(0) # (1, chunk, 3)
+            
+            dist = torch.norm(p2_chunk - p1_chunk, dim=-1) # (chunk_i, chunk_j)
+            min_val, _ = torch.min(dist, dim=1)
+            min_dist_p2[i:end_i] = torch.min(min_dist_p2[i:end_i], min_val)
+
+    return torch.mean(min_dist_p1) + torch.mean(min_dist_p2)
 
 
 def compute_denoising_loss(node_offsets_per_cell, deepdt_data):

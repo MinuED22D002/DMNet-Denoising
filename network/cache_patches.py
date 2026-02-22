@@ -7,6 +7,45 @@ import train_utils
 import DT_data
 from tqdm import tqdm
 from scipy.spatial import cKDTree
+import sys
+
+# Add create_gt to path for imports
+sys_path = os.path.abspath(os.path.join(os.getcwd(), "../create_gt"))
+if sys_path not in sys.path:
+    sys.path.append(sys_path)
+
+def build_tet_adj_facet_single(file_path):
+    """Helper to process a single directory (modified from data_process.py)"""
+    file_names = dict()
+    file_names['output_tetrahedron_adj'] = (os.path.join(file_path, "output_tetrahedron_adj"))
+    file_names['output_facet_nei_cell'] = (os.path.join(file_path, "output_facet_nei_cell.txt"))
+
+    tetrahedron_adj = np.fromfile(file_names['output_tetrahedron_adj'], dtype=np.int32, sep=' ').reshape(-1, 4)
+    facet_nei_cell = np.fromfile(file_names['output_facet_nei_cell'], dtype=np.int32, sep=' ').reshape(-1, 2)
+    facet_nei_cell = np.sort(facet_nei_cell, axis=1)
+    facet_idx = dict()
+    for i in range(facet_nei_cell.shape[0]):
+        string = str(facet_nei_cell[i][0]) + "--" + str(facet_nei_cell[i][1])
+        facet_idx[string] = i
+
+    tet_idx_key = np.linspace(0, tetrahedron_adj.shape[0]-1, tetrahedron_adj.shape[0]).astype(np.int32).reshape(-1,1)
+    tet_neighbor = dict()
+    tet_neighbor[0] = np.sort(np.hstack((tet_idx_key, tetrahedron_adj[:,0].reshape(-1,1))), axis=1)
+    tet_neighbor[1] = np.sort(np.hstack((tet_idx_key, tetrahedron_adj[:,1].reshape(-1,1))), axis=1)
+    tet_neighbor[2] = np.sort(np.hstack((tet_idx_key, tetrahedron_adj[:,2].reshape(-1,1))), axis=1)
+    tet_neighbor[3] = np.sort(np.hstack((tet_idx_key, tetrahedron_adj[:,3].reshape(-1,1))), axis=1)
+
+    tet_adj_facet = (np.ones((tetrahedron_adj.shape[0], 4)) * (-1)).astype(np.int32)
+    for j in range(4):
+        tet = tet_neighbor[j]
+        for i in range(tet.shape[0]):
+            string = str(tet[i][0]) + "--" + str(tet[i][1])
+            idx = facet_idx.get(string)
+            if idx is None:
+                tet_adj_facet[i][j] = -1
+            else:
+                tet_adj_facet[i][j] = idx
+    np.savetxt(os.path.join(file_path, 'tet_adj_facet.txt'), tet_adj_facet, fmt='%d')
 
 # Load config
 cfg = train_utils.load_config('./train_cfg.yaml')
@@ -125,13 +164,8 @@ def extract_and_cache_patches(dataset, name, cfg):
                 cmd = f"{exe_file} {temp_patch_path} {patch_out_dir} 10 {PATCH_SIZE} 0.0"
                 os.system(cmd)
                 
-                # Run build_tt_adj_facet for this patch
-                sys_path = os.path.join(os.getcwd(), "../create_gt")
-                import sys
-                if sys_path not in sys.path:
-                    sys.path.append(sys_path)
-                from data_process import build_tt_adj_facet
-                build_tt_adj_facet(patch_out_dir)
+                # Run adjacency building for this patch
+                build_tet_adj_facet_single(patch_out_dir)
                 
                 # Now load it back as a ScanData
                 patch_scan_loaded = DT_data.ScanData()

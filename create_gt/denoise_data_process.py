@@ -184,7 +184,7 @@ def process_denoising_data(noisy_dir, clean_dir, output_dir, dummy_mesh_path=Non
     # 4. Build Adjacency
     print("Building Tetrahedral Adjacency...")
     try:
-        build_tt_adj_facet(output_dir)
+        build_tet_adj_facet(output_dir)
     except Exception as e:
         print(f"Error in data_process: {e}")
 

@@ -118,33 +118,44 @@ def chamfer_distance(p1, p2, chunk_size=1000):
     p2 = p2.squeeze(0) # (M, 3)
 
     # Distances from p1 to p2
-    min_dist_p1 = torch.full((N,), float('inf'), device=device)
+    min_dist_p1_list = []
     for i in range(0, N, chunk_size):
         end_i = min(i + chunk_size, N)
-        p1_chunk = p1[i:end_i].unsqueeze(1) # (chunk, 1, 3)
+        p1_chunk = p1[i:end_i].unsqueeze(1) # (chunk_i, 1, 3)
         
-        # We also need to chunk p2 for very large N, M
+        current_min = None
         for j in range(0, M, chunk_size):
             end_j = min(j + chunk_size, M)
-            p2_chunk = p2[j:end_j].unsqueeze(0) # (1, chunk, 3)
+            p2_chunk = p2[j:end_j].unsqueeze(0) # (1, chunk_j, 3)
             
             dist = torch.norm(p1_chunk - p2_chunk, dim=-1) # (chunk_i, chunk_j)
-            min_val, _ = torch.min(dist, dim=1)
-            min_dist_p1[i:end_i] = torch.min(min_dist_p1[i:end_i], min_val)
+            min_val, _ = torch.min(dist, dim=1) # (chunk_i)
+            if current_min is None:
+                current_min = min_val
+            else:
+                current_min = torch.min(current_min, min_val)
+        min_dist_p1_list.append(current_min)
+    min_dist_p1 = torch.cat(min_dist_p1_list)
 
     # Distances from p2 to p1
-    min_dist_p2 = torch.full((M,), float('inf'), device=device)
+    min_dist_p2_list = []
     for i in range(0, M, chunk_size):
         end_i = min(i + chunk_size, M)
-        p2_chunk = p2[i:end_i].unsqueeze(1) # (chunk, 1, 3)
+        p2_chunk = p2[i:end_i].unsqueeze(1) # (chunk_i, 1, 3)
         
+        current_min = None
         for j in range(0, N, chunk_size):
             end_j = min(j + chunk_size, N)
-            p1_chunk = p1[j:end_j].unsqueeze(0) # (1, chunk, 3)
+            p1_chunk = p1[j:end_j].unsqueeze(0) # (1, chunk_j, 3)
             
             dist = torch.norm(p2_chunk - p1_chunk, dim=-1) # (chunk_i, chunk_j)
-            min_val, _ = torch.min(dist, dim=1)
-            min_dist_p2[i:end_i] = torch.min(min_dist_p2[i:end_i], min_val)
+            min_val, _ = torch.min(dist, dim=1) # (chunk_i)
+            if current_min is None:
+                current_min = min_val
+            else:
+                current_min = torch.min(current_min, min_val)
+        min_dist_p2_list.append(current_min)
+    min_dist_p2 = torch.cat(min_dist_p2_list)
 
     return torch.mean(min_dist_p1) + torch.mean(min_dist_p2)
 
